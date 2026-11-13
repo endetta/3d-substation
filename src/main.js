@@ -195,7 +195,7 @@ const GROUPS = [
   ['Trafo tenaga', ['TR_TANK', 'TR_HV', 'TR_LV', 'TR_N', 'TR_CONS', 'TR_RAD', 'TR_OLTC', 'TR_MK', 'NGR']],
   ['Sisi 20 kV', ['KUB_IN', 'KUB_F', 'KUB_PS', 'KUB_PT', 'KUB_KPL', 'BUS20', 'FDR', 'TPS']],
   ['Gedung kontrol', ['BLD', 'PANEL', 'PROT', 'RTU', 'TELE', 'HMI', 'RECT', 'ACDC', 'BAT']],
-  ['Pendukung', ['GENSET', 'MAST', 'TRENCH', 'YARD', 'FENCE', 'ROAD', 'GUARD', 'HUMAN']],
+  ['Pendukung', ['FIREWALL', 'GENSET', 'MAST', 'TRENCH', 'YARD', 'FENCE', 'ROAD', 'GUARD', 'HUMAN']],
 ];
 function kindIndex() {
   const idx = new Map();

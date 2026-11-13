@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
-import { MAT, MAT_SEL, EDGE, EDGE_SEL, TERM, BUS_H, model, busGeom, Parts } from './models3d.js';
+import { MAT, MAT_SEL, EDGE, EDGE_SEL, TERM, TR_TERM, DS_PIVOT, ES_PIVOT, BUS_H, model, busGeom, Parts } from './models3d.js';
 
 const BG = 0xefefeb;
 const W_LIVE = new THREE.LineBasicMaterial({ color: 0x161616 });
@@ -61,7 +61,7 @@ export class View3D {
     this.m = m; this.reg = new Map(); this.pick = []; this.wires = []; this.blades = {}; this.labels = [];
     this.sel = null;
     for (const e of m.els) this.addElem(e);
-    for (const l of m.links) if (l.t !== false) this.addLink(l);
+    for (const l of m.links) if (l.t !== false && !l.internal) this.addLink(l);
     this.addDecor();
     this.buildLabels();
     this.dirty = true;
@@ -96,12 +96,22 @@ export class View3D {
     g.position.set(e.x, 0, e.z); g.rotation.y = e.rot || 0;
     const gis = !!e.gis;
     this.addPieces(model(tk(e.type), gis), g, e.id, { elem: e.id });
-    if (!gis && (e.type === 'DS' || e.type === 'ES')) {
-      const isDS = e.type === 'DS';
-      const bp = model(isDS ? 'DS_BLADE' : 'ES_BLADE', false);
+    if (!gis && e.type === 'DS') {
+      // dua belahan pisau per fasa, berputar horizontal di atas isolator
+      const bp = model('DS_BLADE', false);
+      this.blades[e.id] = PH.flatMap(p => [-1, 1].map(side => {
+        const pv = new THREE.Group();
+        pv.position.set(p, DS_PIVOT.y, side * DS_PIVOT.z);
+        pv.userData.side = side;
+        this.addPieces(bp, pv, e.id, { elem: e.id });
+        g.add(pv); return pv;
+      }));
+    }
+    if (!gis && e.type === 'ES') {
+      const bp = model('ES_BLADE', false);
       this.blades[e.id] = PH.map(p => {
         const pv = new THREE.Group();
-        pv.position.set(isDS ? p : p + 0.32, isDS ? 4.62 : 2.72, 1.4 * (isDS ? -1 : 1));
+        pv.position.set(p, ES_PIVOT.y, ES_PIVOT.z);
         this.addPieces(bp, pv, e.id, { elem: e.id });
         g.add(pv); return pv;
       });
@@ -118,15 +128,16 @@ export class View3D {
   term(e, t) {
     const c = Math.cos(e.rot || 0), s = Math.sin(e.rot || 0);
     const W = (lx, y, lz) => V(e.x + c * lx + s * lz, y, e.z - s * lx + c * lz);
-    if (e.type === 'LINE') return [W(-6, 18.4, 0), W(6, 18.4, 0), W(-6, 22.4, 0)];
-    if (e.type === 'TR') {
-      if (t === 'a') return [-1.4, 0, 1.4].map(x => W(x, 6.5, -0.9));
-      if (t === 'b') return [W(-1.1, 4.9, 0.95)];
-      return [W(0.95, 4.9, 0.95)];
+    // SUTT: urutan dipilih agar konduktor dari gantry (x -3, 0, 3) tidak bersilangan
+    if (e.type === 'LINE') return [W(-6, 18.4, 0), W(-6, 22.4, 0), W(6, 18.4, 0)];
+    let pts;
+    if (e.type === 'TR') pts = TR_TERM[t].map(([x, y, z]) => W(x, y, z));
+    else {
+      const T = (e.gis && TERM.GIS[tk(e.type)]) || TERM.AIS[tk(e.type)];
+      const [lz, h] = T[t] || T.a;
+      pts = T.s ? PH.map(p => W(p * T.s / 3, h, lz)) : [W(0, h, lz)];
     }
-    const T = (e.gis && TERM.GIS[tk(e.type)]) || TERM.AIS[tk(e.type)];
-    const [lz, h] = T[t] || T.a;
-    return T.s ? PH.map(p => W(p * T.s / 3, h, lz)) : [W(0, h, lz)];
+    return phaseSort(pts);
   }
 
   endPts(ref, other) {
@@ -154,8 +165,12 @@ export class View3D {
     let style = 'line';
     if (isMV(ea) || isMV(eb)) {
       style = 'cable';
-      const p = A[0], q = B[0], y = 0.08;
-      paths.push([p, V(p.x, y, p.z), V(p.x, y, q.z), V(q.x, y, q.z), q]);
+      // kabel 20 kV lewat jalur parit: depan gedung (dari trafo) atau belakang gedung (ke penyulang / trafo PS)
+      const y = 0.08, q = B[0], Bd = this.m.building;
+      const p = A.length > 1 ? A[1] : A[0];
+      if (A.length > 1) for (const a of A) paths.push([a, V(a.x, y, a.z), V(p.x, y, p.z)]);
+      const lane = /^(FDR|TPS)/.test(eb.type) ? Bd.z0 - 2 : Bd.z1 + 1.2;
+      paths.push([p, V(p.x, y, p.z), V(p.x, y, lane), V(q.x, y, lane), V(q.x, y, q.z), q]);
     } else if (hall(ea) && hall(eb)) {
       this.addTube(A[0], B[0], l.over ? 4.8 : null); return;
     } else if (hall(ea) !== hall(eb)) {
@@ -165,11 +180,21 @@ export class View3D {
       const cse = new THREE.Group(); cse.position.set(q.x, 0, cz);
       this.addPieces(model('CSE', false), cse, 'cse:' + l.a + l.b, { kind: 'CSE' });
       this.root.add(cse);
-      const h = H_[0];
-      paths.push([h, V(h.x, 0.1, h.z), V(h.x, 0.1, cz), V(q.x, 0.1, cz)]);
+      // kabel tegangan tinggi dari GIS lewat parit kabel ke terminasi (CSE)
+      const h = H_[0], y = 0.22;
+      this.pushWire([[h, V(h.x, y, h.z), V(h.x, y, cz), V(q.x, y, cz)]], l, 'cable');
+      const tw = 0.35;
+      this.addFlat('TRENCH', 'trench', h.x - tw, h.x + tw, Math.min(h.z, cz), Math.max(h.z, cz), 0.1, 'conc', { h: 0.2 });
+      this.addFlat('TRENCH', 'trench', Math.min(h.x, q.x) - tw, Math.max(h.x, q.x) + tw, cz - tw, cz + tw, 0.1, 'conc', { h: 0.2 });
       const tops = PH.map(p => V(q.x + p, 5.35, cz));
       O_.forEach((pt, i) => paths.push([tops[i] || tops[0], pt]));
     } else {
+      // pasangan fasa: pilih urutan (lurus/terbalik) dengan jarak antarfasa terbesar
+      if (A.length === 3 && B.length === 3 && !l.span) {
+        const gap = Bq => Math.min(...[[0, 1], [1, 2], [0, 2]].map(([i, j]) => segDist(A[i], Bq[i], A[j], Bq[j])));
+        const R = [...B].reverse();
+        if (gap(R) > gap(B) + 0.05) B = R;
+      }
       const n = Math.max(A.length, B.length);
       for (let i = 0; i < n; i++) {
         const p = A[Math.min(i, A.length - 1)], q = B[Math.min(i, B.length - 1)];
@@ -185,6 +210,10 @@ export class View3D {
         this.root.add(pg);
       }
     }
+    this.pushWire(paths, l, style);
+  }
+
+  pushWire(paths, l, style) {
     const pos = [];
     for (const p of paths) for (let i = 0; i < p.length - 1; i++) pos.push(p[i].x, p[i].y, p[i].z, p[i + 1].x, p[i + 1].y, p[i + 1].z);
     const geo = new THREE.BufferGeometry();
@@ -192,7 +221,7 @@ export class View3D {
     const obj = new THREE.LineSegments(geo, W_LIVE);
     obj.userData.own = true;
     this.root.add(obj);
-    this.wires.push({ obj, ref: l.a, style });
+    this.wires.push({ obj, ref: l.a, style, paths, link: l });
   }
 
   addTube(p, q, overH) {
@@ -244,7 +273,7 @@ export class View3D {
       if (e.type === 'BUS') { grow(e.x0, e.z); grow(e.x1, e.z); } else grow(e.x, e.z);
     }
     const yard = { x0: x0 - 7, x1: x1 + 7, z0: B.z1 + 1, z1: z1 + 4 };
-    const F = { x0: Math.min(yard.x0, B.x0 - 8), x1: Math.max(yard.x1, B.x1 + 9), z0: B.z0 - 3, z1: yard.z1 + 2 };
+    const F = { x0: Math.min(yard.x0, B.x0 - 8), x1: Math.max(yard.x1, B.x1 + 12), z0: B.z0 - 4, z1: yard.z1 + 2 };
     this.bounds = F;
     // halaman kerikil + grid pentanahan
     this.addFlat('YARD', 'yard', F.x0, F.x1, F.z0, F.z1, 0.02, 'conc', { noEdge: true });
@@ -290,9 +319,15 @@ export class View3D {
     // tiang penangkal petir
     const mz0 = trZ + 6, mz1 = yard.z1 - 3;
     [[yard.x0 + 1, mz0], [yard.x1 - 1, mz0], [yard.x0 + 1, mz1], [yard.x1 - 1, mz1]].forEach(([x, z], i) => this.deco('mast' + i, 'MAST', x, z));
+    // dinding api di antara trafo yang berdekatan
+    const trs = m.els.filter(e => e.type === 'TR').sort((a, b) => a.x - b.x);
+    for (let i = 0; i < trs.length - 1; i++) {
+      const a = trs[i], b = trs[i + 1];
+      if (Math.abs(a.z - b.z) < 3 && b.x - a.x < 20) this.deco('fw' + i, 'FIREWALL', (a.x + b.x) / 2, (a.z + b.z) / 2, 0);
+    }
     // gedung kontrol
     this.addBuilding(B);
-    this.deco('genset', 'GENSET', B.x1 + 4.5, B.z1 - 11.5, Math.PI / 2);
+    this.deco('genset', 'GENSET', B.x1 + 8.5, B.z1 - 11.5, Math.PI / 2);
     // gedung GIS
     if (m.hall) this.addHall(m.hall);
     // kawat tanah & lanjutan saluran
@@ -393,7 +428,11 @@ export class View3D {
     }
     for (const id in this.blades) {
       const e = this.m.map[id], closed = sim.sw[id];
-      for (const b of this.blades[id]) b.rotation.x = e.type === 'DS' ? (closed ? 0 : -1.15) : (closed ? 0 : -Math.PI / 2 + 0.02);
+      for (const b of this.blades[id]) {
+        // PMS: belahan sisi -z menghadap +z, sisi +z menghadap -z; terbuka = keduanya berputar 90° ke +x
+        if (e.type === 'DS') b.rotation.y = closed ? (b.userData.side < 0 ? 0 : Math.PI) : Math.PI / 2;
+        else b.rotation.x = closed ? 0 : Math.PI / 2;
+      }
     }
     this.dirty = true;
   }
@@ -557,4 +596,23 @@ function sag(p, q, s) {
     out.push(V(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t - 4 * s * t * (1 - t), p.z + (q.z - p.z) * t));
   }
   return out;
+}
+
+// urutan fasa konsisten (R-S-T) menurut posisi dunia, sehingga perangkat yang diputar 180° tidak membuat konduktor bersilang
+function phaseSort(pts) {
+  if (pts.length < 3) return pts;
+  const dx = Math.abs(pts[0].x - pts[2].x), dz = Math.abs(pts[0].z - pts[2].z);
+  return [...pts].sort((a, b) => dx >= dz ? a.x - b.x : a.z - b.z);
+}
+
+// jarak minimum dua segmen 3D
+function segDist(a, b, c, d) {
+  const u = b.clone().sub(a), v = d.clone().sub(c), w = a.clone().sub(c);
+  const A = u.dot(u), B = u.dot(v), C = v.dot(v), D = u.dot(w), E = v.dot(w), den = A * C - B * B;
+  let sN, sD = den, tN, tD = den;
+  if (den < 1e-9) { sN = 0; sD = 1; tN = E; tD = C; }
+  else { sN = B * E - C * D; tN = A * E - B * D; if (sN < 0) { sN = 0; tN = E; tD = C; } else if (sN > sD) { sN = sD; tN = E + B; tD = C; } }
+  if (tN < 0) { tN = 0; sN = Math.min(Math.max(-D, 0), A); sD = A; } else if (tN > tD) { tN = tD; sN = Math.min(Math.max(B - D, 0), A); sD = A; }
+  const sc = Math.abs(sN) < 1e-9 ? 0 : sN / sD, tc = Math.abs(tN) < 1e-9 ? 0 : tN / tD;
+  return w.add(u.multiplyScalar(sc)).sub(v.multiplyScalar(tc)).length();
 }

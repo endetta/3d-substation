@@ -7,7 +7,8 @@ export const CB_T = new Set(['CB', 'KUB_IN', 'KUB_F', 'KUB_PS', 'KUB_KPL']);
 export const SW_T = new Set([...CB_T, 'DS', 'ES']);
 export const PASS_T = new Set(['CT', 'WT']);
 export const FAULT_T = new Set(['BUS', 'LINE', 'TR', 'FDR']);
-export const OUTDOOR_GIS = new Set(['LA', 'GANTRY', 'LINE', 'WT', 'TR', 'NGR']);
+// Di GI GIS: LA, wave trap dan CVT kopling PLC dipasang di luar dekat ujung saluran; trafo di luar.
+export const OUTDOOR_GIS = new Set(['LA', 'GANTRY', 'LINE', 'WT', 'CVT', 'TR', 'NGR']);
 
 const PI = Math.PI, H = Math.PI / 2;
 const rad = d => d * PI / 180;
@@ -56,20 +57,22 @@ function grp(b, id, name, o, defCB = true) {
 
 // Ujung bay penghantar: PMS line + PMS tanah, CVT, WT, LA, gantry, SUTT. Arah +z / ke atas SLD.
 function lineTail(b, id, name, o, from) {
+  // Urutan dari GI ke luar: PMS line (+PMS tanah sisi saluran) → Wave Trap → CVT (kopling PLC) → LA → gantry → SUTT.
+  // Wave trap harus di sisi GI dari CVT agar sinyal PLC masuk ke CVT dan tidak bocor ke rel.
   const t = { ...o, rot: 0, srot: 180 };
   b.el('DS', id + '_DSL', 'PMS Line ' + name, at(t, 1.6, 16));
-  b.el('ES', id + '_ES', 'PMS Tanah ' + name, { ...at(t, 1.6, 40, 26), srot: -90 });
-  b.el('CVT', id + '_CVT', 'CVT ' + name, { ...at(t, 5.2, 62, 28), srot: -90 });
-  b.el('WT', id + '_WT', 'Wave Trap ' + name, at(t, 7.8, 84));
+  b.el('ES', id + '_ES', 'PMS Tanah ' + name, { ...at(t, 1.6, 36, 26), srot: -90 });
+  b.el('WT', id + '_WT', 'Wave Trap ' + name, at(t, 5.0, 56));
+  b.el('CVT', id + '_CVT', 'CVT ' + name, { ...at(t, 7.8, 84, 28), srot: -90 });
   b.el('LA', id + '_LA', 'LA ' + name, { ...at(t, 10.6, 108, -28), srot: 90 });
   b.el('GANTRY', id + '_GT', 'Gantry ' + name, { ...at(t, 13.6, 0), sld: false });
   b.el('LINE', id, 'SUTT ' + name, { ...at(t, 44, 146), tag: name });
   if (from) b.link(from.ref, id + '_DSL.a', from.o);
-  b.link(id + '_DSL.b', id + '_ES.a', { route: 'vh', t: false });
-  b.link(id + '_DSL.b', id + '_CVT.a', { route: 'vh' });
-  b.link(id + '_CVT.a', id + '_WT.a', { s: false });
-  b.link(id + '_DSL.b', id + '_WT.a', { t: false });
-  b.link(id + '_WT.b', id + '_LA.a', { route: 'vh' });
+  b.link(id + '_DSL.b', id + '_ES.a', { route: 'vh', internal: true });
+  b.link(id + '_DSL.b', id + '_WT.a');
+  b.link(id + '_WT.b', id + '_CVT.a', { route: 'vh' });
+  b.link(id + '_CVT.a', id + '_LA.a', { s: false });
+  b.link(id + '_WT.b', id + '_LA.a', { route: 'vh', t: false });
   b.link(id + '_LA.a', id + '_GT.a', { s: false });
   b.link(id + '_GT.a', id + '.a', { s: false, span: true });
   b.link(id + '_WT.b', id + '.a', { t: false });
@@ -180,10 +183,12 @@ CFG['main-transfer'] = b => {
   line(1, 0, 0); trafo(1, 13, 100);
   // kopel transfer
   busDS(b, 'TC_DS1', 'PMS 1 PMT Transfer', 'B1', { x: 26, z: 5, rot: PI, sx: 175, sy: 66, srot: 0 });
-  b.el('CB', 'TC_CB', 'PMT Transfer', { x: 26, z: 0, rot: PI, sx: 200, sy: 92, srot: -90, def: false, tag: 'Transfer' });
-  b.el('DS', 'TC_DS2', 'PMS 2 PMT Transfer', { x: 26, z: -5, rot: 0, sx: 225, sy: 66, srot: 0 });
+  b.el('CB', 'TC_CB', 'PMT Transfer', { x: 26, z: 1.4, rot: PI, sx: 196, sy: 92, srot: -90, def: false, tag: 'Transfer' });
+  b.el('CT', 'TC_CT', 'CT Transfer', { x: 26, z: -1.6, rot: PI, sx: 222, sy: 92, srot: -90 });
+  b.el('DS', 'TC_DS2', 'PMS 2 PMT Transfer', { x: 26, z: -5, rot: 0, sx: 242, sy: 66, srot: 0 });
   b.link('TC_DS1.b', 'TC_CB.a', { route: 'vh' });
-  b.link('TC_CB.b', 'TC_DS2.b', { route: 'hv' });
+  b.link('TC_CB.b', 'TC_CT.a');
+  b.link('TC_CT.b', 'TC_DS2.b', { route: 'hv' });
   b.link('BT', 'TC_DS2.a');
   trafo(2, 39, 300); line(2, 52, 400);
 };
@@ -209,10 +214,12 @@ CFG.double = b => {
   };
   line(1, 0, 0, true); trafo(1, 13, 100, true);
   busDS(b, 'CP_DS1', 'PMS Rel 1 Kopel', 'B1', { x: 26, z: 5, rot: PI, sx: 175, sy: 66, srot: 0 });
-  b.el('CB', 'CP_CB', 'PMT Kopel 150 kV', { x: 26, z: 0, rot: PI, sx: 200, sy: 92, srot: -90, tag: 'Kopel' });
-  b.el('DS', 'CP_DS2', 'PMS Rel 2 Kopel', { x: 26, z: -5, rot: 0, sx: 225, sy: 66, srot: 0 });
+  b.el('CB', 'CP_CB', 'PMT Kopel 150 kV', { x: 26, z: 1.4, rot: PI, sx: 196, sy: 92, srot: -90, tag: 'Kopel' });
+  b.el('CT', 'CP_CT', 'CT Kopel', { x: 26, z: -1.6, rot: PI, sx: 222, sy: 92, srot: -90 });
+  b.el('DS', 'CP_DS2', 'PMS Rel 2 Kopel', { x: 26, z: -5, rot: 0, sx: 242, sy: 66, srot: 0 });
   b.link('CP_DS1.b', 'CP_CB.a', { route: 'vh' });
-  b.link('CP_CB.b', 'CP_DS2.b', { route: 'hv' });
+  b.link('CP_CB.b', 'CP_CT.a');
+  b.link('CP_CT.b', 'CP_DS2.b', { route: 'hv' });
   b.link('B2', 'CP_DS2.a');
   trafo(2, 39, 300, false); line(2, 52, 400, false);
 };
@@ -262,8 +269,9 @@ CFG.ring = b => {
 
 CFG.h = b => {
   [[1, 0, 0], [2, 22, 240]].forEach(([k, x, sx]) => {
-    lineBay(b, `L${k}`, `Penghantar ${k}`, { x, z: 0, sx, sy: 0 });
-    trafoTail(b, `T${k}`, `Trafo ${k}`, { x, z: -1, sx, sy: 6 }, null, true);
+    // bay dijauhkan dari simpul jembatan agar konduktor jembatan tidak melintasi peralatan
+    lineBay(b, `L${k}`, `Penghantar ${k}`, { x, z: 3.5, sx, sy: 0 });
+    trafoTail(b, `T${k}`, `Trafo ${k}`, { x, z: -3.5, sx, sy: 6 }, null, true);
   });
   const g = grp(b, 'BR', 'Jembatan', { x: 11, z: 0, rot: H, sx: 120, sy: 0, srot: -90 });
   b.link(g.a, 'L1_CB.a', { route: 'hv' });
@@ -292,7 +300,8 @@ function mapGIS(b) {
     hMax = Math.max(hMax, e.z); hMin = Math.min(hMin, e.z);
   }
   const out = b.els.filter(e => OUTDOOR_GIS.has(e.type));
-  const pos = out.filter(e => e.z > cz), neg = out.filter(e => e.z <= cz);
+  // sisi ditentukan oleh bay: peralatan penghantar (L…) ke sisi saluran, peralatan trafo (T…) ke sisi trafo
+  const pos = out.filter(e => e.id[0] === 'L'), neg = out.filter(e => e.id[0] !== 'L');
   const pMin = Math.min(...pos.map(e => e.z)), nMax = Math.max(...neg.map(e => e.z));
   pos.forEach(e => { e.z = hMax + 9 + (e.z - pMin); });
   neg.forEach(e => { e.z = hMin - 9 - (nMax - e.z); });
@@ -332,19 +341,19 @@ function mv(b) {
     });
     b.el('KUB_IN', `IN${sec}`, `Incoming 20 kV ${tr.label}`, { ...kpos(`IN_${sec}`), sx: sx(sec, 0), sy: Y - 24 });
     b.link(tr.id + '.b', `IN${sec}.a`, { route: { vhv: Y - 54 } });
-    b.link(`IN${sec}.b`, bus, { t: false });
+    b.link(`IN${sec}.b`, bus, { internal: true });
     b.el('KUB_PT', `PT${sec}`, `Kubikel PT Seksi ${sec}`, { ...kpos(`PT_${sec}`), sx: sx(sec, 1), sy: Y + 30 });
-    b.link(bus, `PT${sec}.a`, { t: false });
+    b.link(bus, `PT${sec}.a`, { internal: true });
     b.el('KUB_PS', `PS${sec}`, `Kubikel PS ${sec}`, { ...kpos(`PS_${sec}`), sx: sx(sec, 2), sy: Y + 24 });
-    b.link(bus, `PS${sec}.a`, { t: false });
+    b.link(bus, `PS${sec}.a`, { internal: true });
     b.el('TPS', `TPS${sec}`, `Trafo PS ${sec}`, {
-      x: b.building.x1 + 3.5, z: front - 3 - (sec - 1) * 4, rot: 0, sx: sx(sec, 2), sy: Y + 66, tag: `Trafo PS ${sec}`,
+      x: b.building.x1 + 3 + (sec - 1) * 3.2, z: front - 3 - (sec - 1) * 4, rot: 0, sx: sx(sec, 2), sy: Y + 66, tag: `Trafo PS ${sec}`,
     });
     b.link(`PS${sec}.b`, `TPS${sec}.a`);
     for (let i = 0; i < NF; i++) {
       const j = (sec - 1) * NF + i + 1;
       b.el('KUB_F', `KF${j}`, `Kubikel Penyulang ${j}`, { ...kpos(`F_${sec}_${j}`), sx: sx(sec, 3 + (sec === 1 ? NF - 1 - i : i)), sy: Y + 24 });
-      b.link(bus, `KF${j}.a`, { t: false });
+      b.link(bus, `KF${j}.a`, { internal: true });
       b.el('FDR', `F${j}`, `Penyulang ${j}`, {
         x: bx - 16.5 + (j - 1) * 3, z: back - 9, rot: 0, sx: sx(sec, 3 + (sec === 1 ? NF - 1 - i : i)), sy: Y + 62, tag: `${j}`,
       });
@@ -352,8 +361,8 @@ function mv(b) {
     }
   }
   b.el('KUB_KPL', 'KPL20', 'Kopel 20 kV', { ...kpos('KPL'), sx: c, sy: Y, srot: -90, def: false });
-  b.link('B20_1', 'KPL20.a', { t: false });
-  b.link('KPL20.b', 'B20_2', { t: false });
+  b.link('B20_1', 'KPL20.a', { internal: true });
+  b.link('KPL20.b', 'B20_2', { internal: true });
 }
 
 export function buildModel(cfgId, tech) {

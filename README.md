@@ -21,3 +21,8 @@ python3 -m http.server 8000
 lalu buka `http://localhost:8000`. Three.js r170 sudah disertakan di `vendor/` (lisensi MIT).
 
 Dimensi mendekati nyata, disederhanakan untuk memahami denah.
+
+## Audit wiring
+
+- `node tools/audit-topology.mjs` — topologi semua konfigurasi (AIS dan GIS): konsistensi SLD dan 3D, terminal mengambang, PMT yang tidak bisa diisolasi PMS, CT di samping PMT, urutan bay penghantar (LA → CVT → WT → PMS line), dan kondisi normal tanpa padam.
+- `tools/audit3d.js` — geometri 3D, dijalankan di browser: `(await import('/tools/audit3d.js')).audit(__gi.v3)`. Memeriksa konduktor yang menembus peralatan, fasa bersilang, jarak bebas di bawah 1,3 m, dan konduktor udara yang terlalu rendah.

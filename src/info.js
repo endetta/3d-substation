@@ -78,6 +78,8 @@ export const KIND = {
     d: 'Distribusi listrik AC 400 V dan DC 110 V ke seluruh peralatan GI.' },
   GENSET: { n: 'Genset', ab: '', en: 'Diesel Generator',
     d: 'Cadangan listrik AC bila trafo PS padam.' },
+  FIREWALL: { n: 'Dinding Api', ab: '', en: 'Fire Wall',
+    d: 'Dinding beton di antara trafo yang berdekatan agar kebakaran minyak satu trafo tidak menjalar ke trafo lain.' },
   MAST: { n: 'Tiang Penangkal Petir', ab: '', en: 'Lightning Mast',
     d: 'Melindungi switchyard dari sambaran petir langsung.' },
   TRENCH: { n: 'Saluran Kabel', ab: '', en: 'Cable Trench',
