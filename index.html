@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#efefeb">
+<title>Gardu Induk 150/20 kV</title>
+<meta name="description" content="Model 3D dan SLD gardu induk 150/20 kV: berbagai konfigurasi rel, AIS dan GIS, dengan simulasi switching dan gangguan.">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<header id="bar">
+  <button id="cfgBtn" class="cfg" aria-haspopup="dialog"><span id="cfgName">Double busbar</span><span class="car" aria-hidden="true"></span></button>
+  <div class="seg" id="tech" role="group" aria-label="Teknologi">
+    <button data-v="AIS">AIS</button><button data-v="GIS">GIS</button>
+  </div>
+  <div class="seg" id="view" role="group" aria-label="Tampilan">
+    <button data-v="3d">3D</button><button data-v="sld">SLD</button>
+  </div>
+  <button id="aboutBtn" class="ic" aria-label="Panduan">?</button>
+</header>
+
+<main id="stage">
+  <div id="v3d" class="view"></div>
+  <div id="vsld" class="view" hidden></div>
+
+  <div id="status">
+    <span id="fd"></span>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div id="tools" class="tools">
+    <div class="seg" id="cam" role="group" aria-label="Kamera">
+      <button data-v="orbit">Orbit</button><button data-v="top">Atas</button><button data-v="walk">Jalan</button>
+    </div>
+    <button id="labelBtn" class="on">Label</button>
+    <button id="listBtn">Daftar</button>
+  </div>
+  <div id="legend" class="legend" hidden>
+    <span><i class="lg-live"></i>bertegangan</span>
+    <span><i class="lg-dead"></i>padam</span>
+    <span><i class="lg-cb on"></i>PMT tertutup</span>
+    <span><i class="lg-cb"></i>terbuka</span>
+  </div>
+
+  <div id="joy" hidden><div id="knob"></div></div>
+  <div id="walkHint" class="hint" hidden>Geser layar untuk melihat · joystick / WASD untuk berjalan</div>
+</main>
+
+<aside id="sheet" class="sheet" hidden aria-live="polite"></aside>
+
+<div id="cfgPanel" class="panel" hidden role="dialog" aria-label="Konfigurasi">
+  <div class="ph"><b>Konfigurasi gardu induk</b><button class="x" data-close aria-label="Tutup">×</button></div>
+  <div class="pb">
+    <ul id="cfgList" class="cfglist"></ul>
+    <div id="cfgInfo" class="cfginfo"></div>
+  </div>
+</div>
+
+<div id="listPanel" class="panel" hidden role="dialog" aria-label="Daftar komponen">
+  <div class="ph"><b>Daftar komponen</b><button class="x" data-close aria-label="Tutup">×</button></div>
+  <div class="pb" id="listBody"></div>
+</div>
+
+<div id="aboutPanel" class="panel" hidden role="dialog" aria-label="Panduan">
+  <div class="ph"><b>Gardu Induk 150/20 kV</b><button class="x" data-close aria-label="Tutup">×</button></div>
+  <div class="pb" id="aboutBody"></div>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
